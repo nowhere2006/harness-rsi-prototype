@@ -12,6 +12,7 @@
 | [`experiments/results/2026-10-24-tb4-baseline-fast-agent-subset.md`](experiments/results/2026-10-24-tb4-baseline-fast-agent-subset.md) | TB4 19 题基线（含失效分类） |
 | [`experiments/results/2026-10-24-evo-harness-15tasks.md`](experiments/results/2026-10-24-evo-harness-15tasks.md) | Evo-Harness 首轮：14 组配对，10 → 6 |
 | [`analysis/2026-10-24-why-evo-harness-failed.md`](analysis/2026-10-24-why-evo-harness-failed.md) | 上述负结果的根因分析 |
+| [`analysis/2026-10-24-reflection-and-differences.md`](analysis/2026-10-24-reflection-and-differences.md) | 与论文的流程对比（两张流程图）、逐项差异、改进优先级 |
 | [`experiments/data/`](experiments/data/) | 逐题原始记录（JSONL）与两题冒烟轨迹 |
 
 ## 历史记录（已被后续工作取代）
