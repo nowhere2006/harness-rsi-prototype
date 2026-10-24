@@ -4,6 +4,13 @@
 
 本目录用于搭建 mini-swe-agent + Docker + SWE-bench 的基线运行环境，供之后选择论文并复现 Agent Harness RSI 改进。部署、基础样例通过、SWE-bench 解题成功、论文复现成功是四个不同的证据层级。当前结果见 `artifacts/setup-status.json`。
 
+## 仓库导览
+
+- 结论与两臂对比：本文件
+- 全部文档索引：[docs/README.md](docs/README.md)
+- 负结果根因：[为什么第一版 Evo-Harness 会失败](docs/analysis/2026-10-24-why-evo-harness-failed.md)
+- 逐题原始记录：`docs/experiments/data/`
+
 ## 当前结构
 
 - `mini-swe-agent/`：官方源码独立 Git 仓库，以可编辑方式安装到容器；部署配置放在外层，便于保持上游基线。
@@ -54,9 +61,9 @@
 
 ## 单个 SWE-bench 任务
 
-2026-10-23 已应用 100 步、US$1 估算阈值、45 分钟预算，容器内有效值见 `artifacts/budget-validation.json`。首轮候选与筛选边界见 [任务候选说明](docs/experiments/task-candidates-2026-10-23.md)；首选为 `scikit-learn__scikit-learn-26323`。
+2026-10-23 已应用 100 步、US$1 估算阈值、45 分钟预算，容器内有效值见 `artifacts/budget-validation.json`。首轮候选与筛选边界见 [任务候选说明](docs/experiments/archive/2026-10-23-swebench-task-candidates.md)；首选为 `scikit-learn__scikit-learn-26323`。
 
-用户随后授权的首轮正式运行现已完成：`scikit-learn__scikit-learn-26323` 单次尝试通过官方评分，189 个相关测试全部通过。结果见 [单题报告](outputs/baseline-sk26323-20261023-01/report.html) 和 [实验结果记录](docs/experiments/results/2026-10-23-swebench-sk26323.md)。这是一道选定任务的结果；Evo-Harness 最小原型见 `scripts/evo-harness`，但它不是论文完整复现，也未完成整套 benchmark。
+用户随后授权的首轮正式运行现已完成：`scikit-learn__scikit-learn-26323` 单次尝试通过官方评分，189 个相关测试全部通过。结果见 [实验结果记录](docs/experiments/results/2026-10-23-swebench-sk26323.md)（完整报告与轨迹在本地 `outputs/`，不提交）。这是一道选定任务的结果，不是整套 benchmark 成绩。
 
 生成补丁示例（调用 API、下载对应任务镜像）：
 
@@ -103,7 +110,7 @@ scripts/compare-arms             # 与基线配对比较
 
 **结果：14 组有效对照，基线通过 10 题、本方法通过 6 题，翻盘 0 题、退步 4 题。** 其中 `html-js-filter` 在 harness 为空时也退步，说明单次尝试的方差本身就足以翻转结果；其余退步都发生在 harness 已累积内容之后，而注入的经验与当前任务无关（例如给 WAL 恢复题注入 HTML 过滤经验）。
 
-诊断：缺少论文里的 general / topic 分域与筛选，把"迁移"做成了"干扰"；注入位置在任务说明而非 system prompt。详见 [Evo-Harness 首轮实验](docs/experiments/results/2026-10-24-evo-harness-15tasks.md)。
+诊断：缺少论文里的 general / topic 分域与筛选，把"迁移"做成了"干扰"；注入位置在任务说明而非 system prompt。详见 [Evo-Harness 首轮实验](docs/experiments/results/2026-10-24-evo-harness-15tasks.md) 与 [根因分析](docs/analysis/2026-10-24-why-evo-harness-failed.md)。
 
 ## 官方来源
 
