@@ -1,235 +1,115 @@
-# Harness RSI Prototype
+# Harness RSI 本地实验环境
 
-A minimal, reproducible harness for studying **failure-driven harness updates** on
-agent benchmarks. It runs a frozen coding agent on Terminal-Bench / SWE-bench,
-reflects on failed trajectories, and injects the distilled lessons into later
-tasks.
+> 2026-10-24：已加入 `scripts/evo-harness` 最小原型（失败反思 + 跨任务注入）。公开仓库：https://github.com/nowhere2006/harness-rsi-prototype 。论文的 evolver、结构化 skill 与 top-b selection 未实现。
 
-> **Status: minimal prototype, not a reproduction of Evo-Harness.**
-> The current implementation covers only *execution reflection + cross-task
-> injection*. The paper's evolver (`Add / Merge / Revise / Skip`), structured
-> skill entries, top-*b* selection, and general/topic skill levels are **not**
-> implemented. No improvement claim is made.
+本目录用于搭建 mini-swe-agent + Docker + SWE-bench 的基线运行环境，供之后选择论文并复现 Agent Harness RSI 改进。部署、基础样例通过、SWE-bench 解题成功、论文复现成功是四个不同的证据层级。当前结果见 `artifacts/setup-status.json`。
 
-## At a glance
+## 当前结构
 
-| What | Result | Scope |
-| --- | --- | --- |
-| SWE-bench Verified, `scikit-learn__scikit-learn-26323` | official `resolved=true`; 1 FAIL_TO_PASS + 188 PASS_TO_PASS | one task, one attempt |
-| Terminal-Bench 2.0, `fix-git` | official `reward=1.0`; 2 tests passed | one task, one attempt |
-| Terminal-Bench 4.0 subset baseline | 19-task subset selected; ledger caveats documented | not a leaderboard score |
-| Evo prototype, 2-task smoke | both tasks `reward=0`; harness grew 0 → 840 → 1663 chars | mechanism only |
-| Evo prototype, 15-task sequential run | started; no aggregate result yet | no result yet |
+- `mini-swe-agent/`：官方源码独立 Git 仓库，以可编辑方式安装到容器；部署配置放在外层，便于保持上游基线。
+- `Dockerfile`、`compose.yaml`：Python 3.11 控制容器及 Docker CLI；包含 SWE-bench 5.0.2。
+- `requirements.lock`：已安装并验证的 120 个 Python 依赖版本；Dockerfile 同时固定基础镜像摘要。
+- `configs/local-swebench.yaml`：与上游 `swebench.yaml` 合并的本机覆盖配置。
+- `.env`：仅本机保存的 API key，权限 600，不进镜像、不进入版本控制。`.env.example` 不含密钥。
+- `outputs/`：轨迹、补丁、验证报告；`.cache/`：Hugging Face 等缓存。
+- `artifacts/`：安装快照、镜像与版本信息、部署验收记录。
 
-Details and caveats: [`docs/experiments/results/`](docs/experiments/results/) and
-[`results/`](results/).
+## 日常命令
 
-## What is in this repository
-
-This repo contains **our own code, configuration, documentation and curated
-results**. It deliberately does **not** bundle upstream code, benchmark data,
-Docker images or run artifacts.
-
-| Included | Not included — download / generate yourself |
-| --- | --- |
-| `scripts/` — evaluation runners, Evo prototype, comparison tool | `mini-swe-agent/` upstream checkout (clone at the pinned commit) |
-| `terminal-bench/` — control container, Harbor adapter, pinned requirements | Terminal-Bench task datasets (`harbor dataset download`) |
-| `configs/` — model pricing, SWE-bench overrides | Docker images (pulled on demand) |
-| `docs/` — experiment notes, result write-ups, RSI option memo | Python virtualenvs, caches, `outputs/`, `runs/` |
-| `results/` — small curated records | `.env` with API keys |
-| selected `artifacts/` — provenance JSON only | full trajectories and job logs |
-
-## Two execution paths
-
-The repo uses two different agent execution paths. This matters for any change
-to the agent or harness.
-
-- **SWE-bench path.** The agent process runs in the control container
-  (`mini-extra swebench`). The task container only provides the execution
-  environment. The local `mini-swe-agent/` checkout is used, so local source
-  changes take effect.
-- **Terminal-Bench path.** Harbor installs a pinned `mini-swe-agent==2.4.6`
-  **inside each task container** and runs it there. The local checkout is not
-  used. Agent changes must go through a Harbor adapter; task images stay
-  agent-agnostic so the same task can be used with different agents.
-
-`terminal-bench/harbor_agents/mini_mcp.py` is an example adapter extension: it
-subclasses Harbor's mini-swe-agent adapter and adds one dependency to the
-container-side install. It is our code and leaves the upstream baseline
-untouched. It is also the extension point for future RSI work.
-
-## Evo-Harness prototype
-
-The prototype is a sequential, task-level version of the paper's loop:
-
-```
-task k arrives
-  -> harness.md is appended to the task instruction
-  -> frozen agent runs; official verifier scores the attempt
-  -> if reward == 0:
-       verifier output + last 8 commands
-         -> reflection model writes at most 2 lessons
-         -> lessons are appended to harness.md (4000-char cap)
-  -> task k+1 starts with the updated harness
-```
-
-Implementation: [`scripts/evo-harness`](scripts/evo-harness).
-
-- learns **only from failures** (successful runs do not produce lessons);
-- lessons use `TRIGGER / ACTION / WHY` and are written as free text;
-- the harness is injected through Harbor's `--extra-instruction-path`, which
-  appends the file to the task instruction;
-- every task records `reward`, `cost_usd`, `wall_sec`, `harness_chars` and the
-  generated lesson in `outputs/evo-harness/records.jsonl`;
-- `scripts/compare-arms` joins the baseline and Evo records per task.
-
-**Not implemented:** evolver edits, structured skill entries
-(`lesson / trigger / evidence / scope_hint`), top-*b* selection, general vs
-topic skills, batch-level cross-task compilation, full-context reflection, and
-multiple repeats or randomized task orders.
-
-## Quickstart
-
-### 0. Prerequisites
-
-- macOS or Linux, Docker Desktop / Docker Engine
-- Python 3.11+ for the SWE-bench control container; Python 3.13 for the
-  Terminal-Bench control venv
-- `git`, ~20 GiB free disk, and a DeepSeek API key
-- Docker Hub access (or a mirror; see the network note in
-  [`docs/terminal-bench.md`](docs/terminal-bench.md))
-
-### 1. Clone this repo and the upstream agent
+在本目录打开终端：
 
 ```bash
-git clone https://github.com/nowhere2006/harness-rsi-prototype.git
-cd harness-rsi-prototype
-
-git clone https://github.com/SWE-agent/mini-swe-agent.git mini-swe-agent
-cd mini-swe-agent
-git checkout 04d809ceab9df28f9adaed044884180159172930
-cd ..
-```
-
-The upstream checkout is not committed to this repo.
-
-### 2. Configure
-
-```bash
-cp .env.example .env
-# edit .env: DEEPSEEK_API_KEY=...
-chmod 600 .env
-mkdir -p outputs artifacts .cache
-```
-
-`.env` is git-ignored. Task containers do not receive the key or the Docker
-socket.
-
-### 3. SWE-bench path
-
-```bash
-./scripts/lab build
+./scripts/lab status
 ./scripts/lab up
-./scripts/lab smoke          # deterministic, no API calls
-./scripts/lab live-smoke     # small paid model call
-./scripts/lab swebench-one scikit-learn__scikit-learn-26323 baseline-sk26323
+./scripts/lab smoke        # 确定性流程验证，不调用 API
+./scripts/lab live-smoke   # DeepSeek 修复小样例，会产生少量 API 费用
+./scripts/lab verify-task  # 检查一个官方任务镜像，不调用模型或 grader
+./scripts/lab shell
+./scripts/lab down
 ```
 
-`preds.json` and a patch are not a benchmark score: run the official SWE-bench
-evaluator to obtain `resolved`.
+修改上游 Python 文件后，可编辑安装会直接生效。新增依赖或变更 Dockerfile 后使用 `./scripts/lab build` 重建。
 
-### 4. Terminal-Bench path
+## 资源与架构
+
+本次机器：Apple M4、24 GiB 内存、10 核。Docker VM 配置为 6 核、12 GiB；控制容器上限 2 核、3 GiB；每个任务上限 2 核、6 GiB，单并发。任务容器按需创建、结束删除，控制容器保持运行以便调试。
+
+控制容器使用 ARM64 原生 Python。mini-swe-agent 的默认 SWE-bench 任务镜像为 x86_64，本地覆盖配置显式指定 `linux/amd64`。这依赖 Docker 的跨架构执行能力，不能据此推断所有任务兼容或得到与 x86 服务器完全一致的耗时。
+
+本机已启动并验证官方 `sympy__sympy-20590` 任务镜像：x86_64、Python 3.9.20、SymPy 1.7.1，可执行符号运算。数据集基线为 `cffd4e0f86fefd4802349a9f9b19ed70934ea354`；镜像 HEAD 是附加的 `SWE-bench` 准备提交 `5efaed257c694e4452b4c8361aae1cd9cdefd6d1`。直接比较提交中的源码 blob，确认内容相同，差异仅为 1758 个文件从 100644 到 100755 的权限变化；工作树干净。完整记录在 `artifacts/swebench-task-environment.json`。此验证没有生成该题补丁或执行官方评分。
+
+控制容器通过宿主 Docker socket 管理任务容器，适用于这台机器上的可信单用户开发。它具备 Docker 管理权限；任务容器本身不挂载该 socket，也不接收模型 API key。这里的容器划分用于环境复现和任务执行，不构成针对控制程序的宿主安全边界。
+
+开始部署时宿主机约有 53 GiB 空闲磁盘，低于 SWE-bench 对完整本地评测建议的 120 GB。单个镜像的大小随仓库变化；本环境先按单实例使用，启动前要求至少 20 GiB 余量，此检查并不保证整个运行期间不会耗尽空间。不自动清理其他 Docker 项目的容器、镜像、卷或缓存。
+
+## DeepSeek 接入与费用
+
+请求使用 `https://api.deepseek.com`、`deepseek-flash`，LiteLLM 侧名称为 `deepseek/deepseek-flash`。当前官方说明该别名由 DeepSeek-V4.1-Flash-1017 提供，服务端可能更新，研究运行应保存响应中的模型标识和时间。
+
+当前配置使用非思考模式验证工具调用链；这只是部署起点，不代表某篇论文的模型或推理设置。开始正式对照实验前，应固定模型、思考模式、token 限制、任务划分和预算。
+
+本地价格注册表采用 2026-10-23 官方美元峰值价，输入 cache miss $0.30 / 百万 tokens、cache hit $0.006 / 百万 tokens、输出 $1.20 / 百万 tokens。因此报告中的金额是峰值价估算，不能替代 DeepSeek 账单。每实例配置 100 步、约 $1 估算费用和 45 分钟上限，任务容器保留 60 分钟以留出余量；费用与时间上限在请求之间检查，正在进行的请求仍可能超出。外层每进程调用限制为 110 次、费用限制为 $1；这不是跨进程或账户级的累计预算。单任务入口保持 1 个 worker，每次独立运行算一次尝试；当前没有自动从头重跑机制。基础 live smoke 更小：8 步、约 $0.10、5 分钟。
+
+2026-10-23 的真实接入验证通过：DeepSeek Flash 在独立任务容器中修复 `add(a,b)` 的故障样例，保持测试文件不变，使测试从失败变为通过，并导出补丁；3 次模型调用、峰值价估算 $0.00022122。记录位于 `outputs/deepseek-smoke/report.json`、`trajectory.json` 和 `patch.diff`。这是部署验证，不是 SWE-bench 解题成绩。
+
+## 单个 SWE-bench 任务
+
+2026-10-23 已应用 100 步、US$1 估算阈值、45 分钟预算，容器内有效值见 `artifacts/budget-validation.json`。首轮候选与筛选边界见 [任务候选说明](docs/experiments/task-candidates-2026-10-23.md)；首选为 `scikit-learn__scikit-learn-26323`。
+
+用户随后授权的首轮正式运行现已完成：`scikit-learn__scikit-learn-26323` 单次尝试通过官方评分，189 个相关测试全部通过。结果见 [单题报告](outputs/baseline-sk26323-20261023-01/report.html) 和 [实验结果记录](docs/experiments/results/2026-10-23-swebench-sk26323.md)。这是一道选定任务的结果；Evo-Harness 最小原型见 `scripts/evo-harness`，但它不是论文完整复现，也未完成整套 benchmark。
+
+生成补丁示例（调用 API、下载对应任务镜像）：
 
 ```bash
-cd terminal-bench
-python3.13 -m venv .venv
-.venv/bin/pip install -r requirements.lock
-
-# Inspect the pinned registry selectors before downloading.
-.venv/bin/harbor dataset list --legacy
-.venv/bin/harbor dataset download terminal-bench@2.0 -o datasets
-.venv/bin/harbor dataset download terminal-bench@4.0.0 -o datasets-tb4
-
-cd ..
-./scripts/terminal-lab check
-TERMINAL_BENCH_PAID_RUN=1 ./scripts/terminal-lab run-single fix-git
+./scripts/lab swebench-one sympy__sympy-20590 baseline-sympy-20590
 ```
 
-Datasets are downloaded, not committed. The exact registry commit and task-set
-scope are documented in [`docs/terminal-bench.md`](docs/terminal-bench.md) and
-[`terminal-bench/VALIDATION.md`](terminal-bench/VALIDATION.md).
+这会使用 Verified/test 子集、精确 instance ID、1 个 worker，保存 `outputs/baseline-sympy-20590/preds.json` 和该实例轨迹。`preds.json` 中有补丁、Agent 主动提交都不等于测试通过；需要另外运行 SWE-bench evaluator，才能报告 resolved。
 
-### 5. Evo-Harness prototype
+SWE-bench 5.x 使用任务仓库定义评测。在本机 ARM 上运行官方评测还需要配置 `swe-bench-tasks` 和本地 Buildx；整批构建可能超过当前磁盘容量。先在容器内查看实际安装版本的参数：
 
 ```bash
-# Two-task smoke example (paid; calls the DeepSeek API)
-./scripts/evo-harness session-window-debug gsea-proteomics
-
-# Full 15-task sequential run (paid; long-running)
-./scripts/evo-harness
-
-# Baseline arm for the same subset (paid; requires the TB4 dataset)
-scripts/tb4-baseline
-
-# Paired comparison
-./scripts/compare-arms
+docker compose exec agent swebench --help
+docker compose exec agent swebench eval --help
 ```
 
-The prototype writes `terminal-bench/harness/harness.md` and
-`outputs/evo-harness/records.jsonl`. Both are git-ignored.
+为后续论文复现，先保留原版 mini-swe-agent baseline，再在实验分支加入论文方法，并使用相同任务、模型和预算比较 resolved、费用和耗时。当前 SWE-bench 路径本身只验证部署；Evo-Harness 最小原型（仅失败反思 + 注入）见 `scripts/evo-harness`，evolver 与结构化 skill 未实现。
 
-## Results and evidence
+## Terminal-Bench 4.0 baseline
 
-- [SWE-bench single task](docs/experiments/results/2026-10-23-swebench-sk26323.md)
-- [Terminal-Bench 2.0 fix-git](docs/experiments/results/2026-10-23-terminal-bench-fix-git.md)
-- [Terminal-Bench 4.0 baseline subset](docs/experiments/results/2026-10-24-tb4-baseline-fast-agent-subset.md)
-- [Evo smoke records](results/evo-harness-smoke-2tasks.md)
-- `artifacts/` — selected provenance JSON (no logs or trajectories)
+Harbor 0.24.0 驱动 `terminal-bench/terminal-bench@4.0.0`（66 题，每题独立 verifier 容器，官方超时 8 小时）。任务文件导出在 `terminal-bench/datasets-tb4/`，运行入口是 `scripts/terminal-lab`（自定义 adapter 子类补齐 `mcp` 依赖）。
 
-The SWE-bench and Terminal-Bench 2.0 results are **single-task verifications**,
-not benchmark scores. The Terminal-Bench 4.0 subset uses a shorter budget than
-the official run and must not be compared with public leaderboard numbers.
+2026-10-23 夜完成 fast-agent 选定的 19 题基线：**10 题通过，5 题真实失败，3 题在 150 步上限处被截断，1 题因余额耗尽中断**（有效样本 15 题中通过 10 题）。US$2.59，6.2 小时（2 并发）。预算为每题 150 步 / 90 分钟 / US$2、一次尝试、不重试；Docker VM 8 核 / 16 GiB，任务资源按各题 `task.toml` 声明值由 Docker 强制。
 
-## Limitations
-
-- **Not a paper reproduction.** Only failure reflection and injection are
-  implemented; the evolver and structured skill representation are missing.
-- **Order-dependent by construction.** The harness at task *k* depends on the
-  prefix of tasks seen. This run uses one fixed order, with no repeats, no
-  randomized orders, and no held-out split, so mechanism and task order are
-  confounded.
-- **Narrow reflection context.** Only verifier output and the last 8 commands
-  are used, not the full trajectory or patch.
-- **Task-specific leakage risk.** A lesson can encode dataset-specific details;
-  the GSEA smoke lesson is an example.
-- **Cost accounting is incomplete.** Task costs are recorded; reflection API
-  cost is not included in the comparison.
-- **One attempt per task.** No variance estimate or significance claim.
-- **Hardware/network caveats.** The local run uses an ARM host with x86 task
-  images under emulation; wall-clock numbers are not comparable across setups.
-- **Costs are client-side estimates**, not DeepSeek bills.
-
-## Repository layout
-
-```
-.
-├── configs/                  # model pricing, SWE-bench overrides
-├── docs/                     # experiment notes and result write-ups
-├── scripts/                  # runners, Evo prototype, comparison
-├── terminal-bench/           # Harbor control image, adapter, smoke task
-├── results/                  # small curated records
-├── artifacts/                # selected provenance JSON
-├── Dockerfile, compose.yaml  # SWE-bench control container
-└── .env.example
+```bash
+TB_DATASET="$PWD/terminal-bench/datasets-tb4/terminal-bench" \
+TB_STEP_LIMIT=150 TB_WALL_SECONDS=5400 TB_COST_LIMIT=2.0 \
+scripts/tb4-baseline            # 断点续跑，已记录的题自动跳过
+scripts/tb4-summarize           # 逐题与分类汇总
 ```
 
-## References
+结果与边界：[基线报告](docs/experiments/results/2026-10-24-tb4-baseline-fast-agent-subset.md)；可复现信息（版本、预算、逐题 task 文件哈希、job ID）：`artifacts/tb4-baseline-provenance.json`。有效样本的 67% 同样不能与公开的 33.8% 比较——任务集、预算（150 步 / 90 分钟 vs 官方 8 小时）、重复次数都不同。
 
-- Evo-Harness: *Context-to-Harness Skill Compilation for Self-Evolving Agents*,
-  Wei et al., EMNLP 2026 Main, [arXiv:2608.15071](https://arxiv.org/abs/2608.15071).
-  This repository is an independent minimal prototype; it is not affiliated with
-  the authors or the official `a-evolve` code.
-- [mini-swe-agent](https://github.com/SWE-agent/mini-swe-agent)
-- [Harbor](https://github.com/laude-institute/harbor) and
-  [Terminal-Bench](https://github.com/laude-institute/terminal-bench)
-- [SWE-bench](https://github.com/swe-bench/SWE-bench)
+RSI 机制的三条候选路线、实现挂载点与测量设计见 [机制选型备忘](docs/experiments/rsi-options.md)。
+
+## Evo-Harness 原型（负结果）
+
+按论文的"单次执行 → 技能编译 → 在线累积"思路实现了一个最小原型：每题失败后把 verifier 输出交给反思模型，产出 `TRIGGER / ACTION / WHY` 条目，追加进 harness，下一题通过 `--extra-instruction-path` 注入。
+
+```bash
+scripts/evo-harness              # 顺序跑 15 题（结果写入 outputs/evo-harness/）
+scripts/compare-arms             # 与基线配对比较
+```
+
+**结果：14 组有效对照，基线通过 10 题、本方法通过 6 题，翻盘 0 题、退步 4 题。** 其中 `html-js-filter` 在 harness 为空时也退步，说明单次尝试的方差本身就足以翻转结果；其余退步都发生在 harness 已累积内容之后，而注入的经验与当前任务无关（例如给 WAL 恢复题注入 HTML 过滤经验）。
+
+诊断：缺少论文里的 general / topic 分域与筛选，把"迁移"做成了"干扰"；注入位置在任务说明而非 system prompt。详见 [Evo-Harness 首轮实验](docs/experiments/results/2026-10-24-evo-harness-15tasks.md)。
+
+## 官方来源
+
+- [mini-swe-agent 源码安装](https://mini-swe-agent.com/latest/quickstart/)
+- [mini-swe-agent SWE-bench 推理与评测](https://mini-swe-agent.com/latest/usage/swebench/)
+- [SWE-bench 官方仓库与 ARM 说明](https://github.com/swe-bench/SWE-bench)
+- [SWE-bench Docker 资源要求](https://www.swebench.com/SWE-bench/guides/docker_setup/)
+- [DeepSeek 模型与价格](https://api-docs.deepseek.com/quick_start/pricing/)
+- [DeepSeek 思考模式与工具调用](https://api-docs.deepseek.com/guides/thinking_mode/)

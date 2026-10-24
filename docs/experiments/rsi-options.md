@@ -80,9 +80,3 @@ TB4 的 verifier 是**独立容器**、在 Agent 结束后才跑。Agent 在轨�
 剩余未验证的一环：任务容器里 mini 是 `uv tool install` 装出来的，模块需要放进该
 工具环境的 site-packages（或给 mini 进程设 `PYTHONPATH`）。这属于打包细节，实现时
 在 adapter 的 `install()` 里补一步即可，不需要改 Harbor。
-
-## 2026-10-24 更新：最小原型已实现
-
-`scripts/evo-harness` 已实现 task-level 的“失败反思 + harness 注入”（方案 A 的简化版）：顺序执行任务；失败后用 verifier 输出与最后 8 条命令反思，最多生成 2 条 TRIGGER/ACTION/WHY；写入 markdown 并在下一题通过 Harbor 的 `--extra-instruction-path` 注入。
-
-未实现 evolver（Add / Merge / Revise / Skip）、结构化 skill、top-b selection、general/topic 分层和完整上下文反思。15 题顺序对照已启动，尚无收益结论；公开版说明见仓库根目录 README。

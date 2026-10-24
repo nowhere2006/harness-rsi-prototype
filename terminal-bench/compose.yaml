@@ -4,16 +4,16 @@ services:
       context: .
       dockerfile: Dockerfile
     image: harness-rsi-terminal-bench:harbor-0.24.0
-    working_dir: /workspace
+    working_dir: /Users/joe/Desktop/Harness RSI/terminal-bench
     env_file:
       - ../.env
     environment:
       DOCKER_HOST: unix:///var/run/docker.sock
-      HARBOR_HOME: /workspace/.harbor
+      HARBOR_HOME: /Users/joe/Desktop/Harness RSI/terminal-bench/.harbor
       # Makes our custom agent adapters (harbor_agents/*) importable.
-      PYTHONPATH: /workspace
+      PYTHONPATH: /Users/joe/Desktop/Harness RSI/terminal-bench
     volumes:
-      - .:/workspace
+      - .:/Users/joe/Desktop/Harness RSI/terminal-bench
       - /var/run/docker.sock:/var/run/docker.sock
     cpus: 1.0
     mem_limit: 2g

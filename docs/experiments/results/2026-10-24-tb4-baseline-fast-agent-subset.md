@@ -6,7 +6,7 @@
 - Agent：Harbor `mini-swe-agent` adapter 子类（PyPI 2.4.6 + `mcp`），模型 `deepseek/deepseek-flash`，非思考模式。
 - 预算：每题 150 步 / 5400 秒 / US$2、1 次尝试、0 重试；2 并发，内存闸门 12 GiB。
 - 资源：按每题 `task.toml` 声明值由 Docker 强制；Docker VM 8 核 / 16 GiB。
-- 记录：`results/tb4-baseline-records.jsonl`；首次无效尝试未随仓库提交。
+- 记录：`outputs/tb4-baseline/records.jsonl`；首次无效尝试单独存档在 `records-invalid-attempt1.jsonl`。
 
 ## 结果：10/19 通过，其中 4 条记录不可计入
 
