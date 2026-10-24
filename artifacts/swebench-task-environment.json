@@ -1,0 +1,52 @@
+{
+  "result": "PASS",
+  "timestamp_utc": "2026-10-23T12:57:38.542259+00:00",
+  "kind": "official-swebench-task-environment-only",
+  "real_llm": false,
+  "dataset": "princeton-nlp/SWE-Bench_Verified",
+  "split": "test",
+  "dataset_fingerprint": "1fdfd21ba2621130",
+  "instance_id": "sympy__sympy-20590",
+  "base_commit": "cffd4e0f86fefd4802349a9f9b19ed70934ea354",
+  "image": "docker.io/swebench/sweb.eval.x86_64.sympy_1776_sympy-20590:latest",
+  "image_repo_digests": [
+    "swebench/sweb.eval.x86_64.sympy_1776_sympy-20590@sha256:3a282752833ce34730ee0621e22033501c993f45742775ca57f04c9ff27178a0"
+  ],
+  "host_architecture": "arm64",
+  "task_platform": "linux/amd64",
+  "checks": {
+    "architecture": {
+      "output": "x86_64\n",
+      "returncode": 0,
+      "exception_info": ""
+    },
+    "base_commit": {
+      "output": "5efaed257c694e4452b4c8361aae1cd9cdefd6d1\n",
+      "returncode": 0,
+      "exception_info": ""
+    },
+    "working_tree": {
+      "output": "",
+      "returncode": 0,
+      "exception_info": ""
+    },
+    "python": {
+      "output": "Python 3.9.20\n",
+      "returncode": 0,
+      "exception_info": ""
+    },
+    "package_execution": {
+      "output": "1.7.1\n",
+      "returncode": 0,
+      "exception_info": ""
+    },
+    "baseline_source": {
+      "output": "{\"source_content_matches_base_commit\": true, \"mode_only_changes\": 1758, \"mode_changes\": [\"100644 -> 100755\"]}\n",
+      "returncode": 0,
+      "exception_info": ""
+    }
+  },
+  "prediction_generated": false,
+  "swebench_evaluated": false,
+  "resolved": null
+}

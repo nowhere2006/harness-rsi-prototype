@@ -1,0 +1,28 @@
+name: harness-rsi
+services:
+  agent:
+    build: .
+    image: harness-rsi/mini-swe-agent:2.4.6
+    container_name: harness-rsi-agent
+    init: true
+    working_dir: /workspace
+    cpus: 2
+    mem_limit: 3g
+    memswap_limit: 3g
+    pids_limit: 512
+    env_file:
+      - .env
+    environment:
+      LITELLM_MODEL_REGISTRY_PATH: /workspace/configs/model-pricing.json
+      MSWEA_GLOBAL_COST_LIMIT: "1"
+      MSWEA_GLOBAL_CALL_LIMIT: "110"
+      MSWEA_SILENT_STARTUP: "1"
+    volumes:
+      - ./mini-swe-agent:/workspace/mini-swe-agent
+      - ./configs:/workspace/configs:ro
+      - ./scripts:/workspace/scripts:ro
+      - ./outputs:/workspace/outputs
+      - ./artifacts:/workspace/artifacts
+      - ./.cache:/workspace/.cache
+      - /var/run/docker.sock:/var/run/docker.sock
+    command: ["sleep", "infinity"]

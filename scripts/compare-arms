@@ -1,0 +1,74 @@
+#!/usr/bin/env python3
+"""Compare the TB4 baseline arm with the Evo-Harness arm, task by task."""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+BASE = ROOT / "outputs" / "tb4-baseline" / "records.jsonl"
+EVO = ROOT / "outputs" / "evo-harness" / "records.jsonl"
+EVO_SCRIPT = ROOT / "scripts" / "evo-harness"
+
+
+def evo_slugs() -> list[str]:
+    text = EVO_SCRIPT.read_text()
+    block = text[text.index("SLUGS = ["):text.index("]", text.index("SLUGS = ["))]
+    return [line.strip().strip('",') for line in block.splitlines()[1:] if line.strip()]
+
+
+def load(path: Path) -> dict[str, dict]:
+    if not path.exists():
+        return {}
+    rows = {}
+    for line in path.read_text().splitlines():
+        if not line.strip():
+            continue
+        rec = json.loads(line)
+        if rec.get("status", "completed") != "completed":
+            continue
+        rows[rec["slug"]] = rec
+    return rows
+
+
+def fmt(value, spec: str) -> str:
+    return format(value, spec) if isinstance(value, (int, float)) else "-"
+
+
+def main() -> int:
+    base, evo = load(BASE), load(EVO)
+    if not base:
+        print("no baseline records")
+        return 1
+    wanted = evo_slugs()
+    slugs = [s for s in wanted if s in evo] + [s for s in wanted if s not in evo]
+    print(f"{'task':32s} {'base':>5s} {'evo':>5s} {'Δ':>3s} {'base$':>8s} {'evo$':>8s} {'harness':>8s}")
+    wins = losses = same = pending = 0
+    for slug in slugs:
+        b, e = base[slug], evo.get(slug)
+        if e is None:
+            pending += 1
+            print(f"{slug:32s} {fmt(b.get('reward'), '4.0f'):>5s} {'-':>5s} {'-':>3s} "
+                  f"{fmt(b.get('cost_usd'), '8.4f'):>8s} {'-':>8s} {'-':>8s}")
+            continue
+        delta = (e.get("reward") or 0) - (b.get("reward") or 0)
+        if delta > 0:
+            wins += 1
+        elif delta < 0:
+            losses += 1
+        else:
+            same += 1
+        print(f"{slug:32s} {fmt(b.get('reward'), '4.0f'):>5s} {fmt(e.get('reward'), '4.0f'):>5s} "
+              f"{int(delta):>3d} {fmt(b.get('cost_usd'), '8.4f'):>8s} "
+              f"{fmt(e.get('cost_usd'), '8.4f'):>8s} {e.get('harness_chars', 0):>8d}")
+    n = wins + losses + same
+    print(f"\npaired {n}  wins {wins}  losses {losses}  same {same}  pending {pending}")
+    if n:
+        print(f"baseline solved {sum(1 for s in base if s in evo and base[s].get('reward') == 1)}/{n}"
+              f"  evo solved {sum(1 for s in evo if s in base and evo[s].get('reward') == 1)}/{n}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

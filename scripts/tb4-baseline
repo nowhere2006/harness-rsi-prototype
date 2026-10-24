@@ -1,0 +1,187 @@
+#!/usr/bin/env python3
+"""Run the fast-agent Terminal-Bench 4.0 subset as a baseline.
+
+Two tasks in parallel, memory-aware so concurrent tasks never oversubscribe the
+Docker VM. Pull time is recorded separately from trial time.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import subprocess
+import sys
+import threading
+import time
+import tomllib
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
+from datetime import datetime, timezone
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+TB = ROOT / "terminal-bench"
+DATASET = TB / "datasets-tb4" / "terminal-bench"
+RUNS = TB / "runs"
+OUT = ROOT / "outputs" / "tb4-baseline"
+RECORDS = OUT / "records.jsonl"
+
+SLUGS = [
+    "photonic-waveguide-routing",
+    "html-js-filter",
+    "cad-model",
+    "vllm-deepseek-streaming",
+    "vpp-loss-divergence",
+    "cargo-flight-dispatch",
+    "mvcc-lsm-compaction",
+    "production-planning",
+    "sound-change-cascade",
+    "gsea-proteomics",
+    "vba-userform-port",
+    "react-lead-form",
+    "wal-recovery-ordering",
+    "atrx-vep-crispr",
+    "fin-saccr-rwa",
+    "hof-topology-interpenetration",
+    "satb-audio-transcription",
+    "session-window-debug",
+    "telecom-entity-resolution",
+]
+
+
+def log(msg: str) -> None:
+    print(f"[{datetime.now(timezone.utc).strftime('%H:%M:%SZ')}] {msg}", flush=True)
+
+
+def mem_mib(slug: str) -> int:
+    cfg = tomllib.loads((DATASET / slug / "task.toml").read_text())
+    return cfg.get("environment", {}).get("memory_mb") or 4096
+
+
+def images_for(slug: str) -> list[str]:
+    cfg = tomllib.loads((DATASET / slug / "task.toml").read_text())
+    refs = [
+        cfg.get("environment", {}).get("docker_image"),
+        (cfg.get("verifier", {}).get("environment") or {}).get("docker_image"),
+    ]
+    return [r for r in refs if r]
+
+
+def pull(slug: str) -> float:
+    started = time.time()
+    for ref in images_for(slug):
+        subprocess.run(
+            ["docker", "pull", "--platform", "linux/amd64", ref],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    return round(time.time() - started, 1)
+
+
+def run_task(slug: str) -> dict:
+    env = {
+        **os.environ,
+        "TB_DATASET": str(DATASET),
+        "TB_STEP_LIMIT": "150",
+        "TB_WALL_SECONDS": "5400",
+        "TB_COST_LIMIT": "2.0",
+        "TERMINAL_BENCH_PAID_RUN": "1",
+    }
+    started = time.time()
+    proc = subprocess.run(
+        [str(ROOT / "scripts" / "terminal-lab"), "run-single", slug],
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    wall = round(time.time() - started, 1)
+    job = ""
+    for line in proc.stdout.splitlines():
+        if line.startswith("JOB_NAME="):
+            job = line.split("=", 1)[1]
+    if not job:
+        return {"slug": slug, "status": "no_job", "wall_sec": wall,
+                "stderr_tail": proc.stderr.strip().splitlines()[-3:]}
+    job_dir = RUNS / job
+    result = json.loads((job_dir / "result.json").read_text())
+    stats = result["stats"]
+    trial = next((p for p in job_dir.iterdir() if p.is_dir()), None)
+    reward = None
+    exit_status = None
+    if trial and (trial / "result.json").exists():
+        tr = json.loads((trial / "result.json").read_text())
+        reward = (tr.get("verifier_result") or {}).get("rewards", {}).get("reward")
+        exit_status = (tr.get("agent_result") or {}).get("metadata")
+    return {
+        "slug": slug,
+        "status": "completed" if stats["n_completed_trials"] else "errored",
+        "job": job,
+        "wall_sec": wall,
+        "reward": reward,
+        "errors": stats["n_errored_trials"],
+        "input_tokens": stats["n_input_tokens"],
+        "cache_tokens": stats["n_cache_tokens"],
+        "output_tokens": stats["n_output_tokens"],
+        "cost_usd": stats["cost_usd"],
+        "exit_status": exit_status,
+    }
+
+
+def run_one(slug: str, lock) -> None:
+    try:
+        pull_sec = pull(slug)
+    except subprocess.CalledProcessError as exc:
+        record = {"slug": slug, "status": "pull_failed",
+                  "stderr_tail": exc.stderr.strip().splitlines()[-2:]}
+        log(f"{slug}: pull failed -> {record['stderr_tail']}")
+        with lock:
+            RECORDS.open("a").write(json.dumps(record) + "\n")
+        return
+    log(f"{slug}: running (pull {pull_sec}s)")
+    record = run_task(slug)
+    record["pull_sec"] = pull_sec
+    record["finished_at"] = datetime.now(timezone.utc).isoformat()
+    with lock:
+        RECORDS.open("a").write(json.dumps(record) + "\n")
+    log(f"{slug}: {record.get('status')} reward={record.get('reward')} "
+        f"cost=${record.get('cost_usd')} wall={record.get('wall_sec')}s")
+
+
+def main() -> int:
+    OUT.mkdir(parents=True, exist_ok=True)
+    done = set()
+    if RECORDS.exists():
+        for line in RECORDS.read_text().splitlines():
+            if line.strip():
+                done.add(json.loads(line)["slug"])
+    remaining = [s for s in SLUGS if s not in done]
+    if len(sys.argv) > 1:
+        remaining = [s for s in remaining if s in sys.argv[1:]]
+    workers = int(os.environ.get("TB_WORKERS", "2"))
+    budget_mib = int(os.environ.get("TB_MEM_BUDGET_MIB", "12288"))
+    log(f"baseline over {len(remaining)} tasks: {workers} workers, {budget_mib} MiB budget")
+    lock = threading.Lock()
+    pending = list(remaining)
+    running: dict = {}
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        while pending or running:
+            while pending:
+                if len(running) >= workers:
+                    break
+                used = sum(m for _, m in running.values())
+                if used + mem_mib(pending[0]) > budget_mib and running:
+                    break
+                slug = pending.pop(0)
+                running[pool.submit(run_one, slug, lock)] = (slug, mem_mib(slug))
+            if not running:
+                slug = pending.pop(0)
+                running[pool.submit(run_one, slug, lock)] = (slug, mem_mib(slug))
+            finished, _ = wait(running, return_when=FIRST_COMPLETED)
+            for fut in finished:
+                running.pop(fut)
+    log("baseline finished")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -1,0 +1,7 @@
+.venv/
+.harbor/
+.home/
+.buildx/
+runs/
+__pycache__/
+*.pyc

@@ -1,0 +1,11 @@
+**
+!Dockerfile
+!requirements-bootstrap.txt
+!requirements.lock
+!mini-swe-agent/
+!mini-swe-agent/**
+mini-swe-agent/.git
+mini-swe-agent/**/__pycache__
+mini-swe-agent/**/.pytest_cache
+mini-swe-agent/**/.venv
+mini-swe-agent/**/*.egg-info

@@ -1,0 +1,29 @@
+# Merge AFTER the upstream swebench.yaml to preserve its task prompt.
+agent:
+  step_limit: 100
+  cost_limit: 1.0
+  wall_time_limit_seconds: 2700
+environment:
+  pull_timeout: 900
+  container_timeout: 60m
+  run_args:
+    - --rm
+    - --platform=linux/amd64
+    - --cpus=2
+    - --memory=6g
+    - --memory-swap=6g
+    - --pids-limit=512
+    - --label=harness-rsi.task=true
+model:
+  model_name: deepseek/deepseek-flash
+  model_class: litellm
+  litellm_model_registry: /workspace/configs/model-pricing.json
+  model_kwargs:
+    api_base: https://api.deepseek.com
+    timeout: 180
+    max_tokens: 8192
+    drop_params: true
+    parallel_tool_calls: false
+    extra_body:
+      thinking:
+        type: disabled

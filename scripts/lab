@@ -1,0 +1,53 @@
+#!/bin/bash
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+case "${1:-help}" in
+  build)
+    docker compose build
+    docker compose up -d
+    ;;
+  up) docker compose up -d ;;
+  down) docker compose down ;;
+  shell) docker compose exec agent bash ;;
+  smoke) docker compose exec -T agent python scripts/smoke.py ;;
+  live-smoke) docker compose exec -T agent python scripts/smoke.py --live ;;
+  verify-task) docker compose exec -T agent python scripts/verify_task.py ;;
+  status)
+    docker compose ps
+    docker info --format 'Docker VM: {{.NCPU}} CPUs, {{.MemTotal}} bytes RAM, {{.Architecture}}'
+    df -h .
+    ;;
+  swebench-one)
+    instance="${2:?Usage: scripts/lab swebench-one INSTANCE_ID [RUN_NAME]}"
+    run_name="${3:-baseline-$(date +%Y%m%d-%H%M%S)}"
+    [[ "$instance" =~ ^[a-zA-Z0-9_.-]+$ && "$run_name" =~ ^[a-zA-Z0-9_.-]+$ ]] || { echo 'Invalid instance ID or run name'; exit 1; }
+    filter_pattern="$(python3 -c 'import re,sys; print("^"+re.escape(sys.argv[1])+"$")' "$instance")"
+    python3 - <<'PY'
+import shutil
+free=shutil.disk_usage('.').free/1024**3
+if free < 20:
+    raise SystemExit(f'Only {free:.1f} GiB free; require 20 GiB headroom before starting a task.')
+print(f'Host free storage: {free:.1f} GiB; one worker only. Task image size varies.')
+PY
+    docker compose exec -T agent mini-extra swebench \
+      --subset verified --split test --filter "$filter_pattern" \
+      --workers 1 -c swebench.yaml -c /workspace/configs/local-swebench.yaml \
+      --output "/workspace/outputs/$run_name"
+    python3 - "$instance" "$run_name" <<'PY'
+import json, sys
+from pathlib import Path
+instance, run_name=sys.argv[1:]
+root=Path('outputs')/run_name
+pred=json.loads((root/'preds.json').read_text())
+if instance not in pred or not pred[instance].get('model_patch'):
+    raise SystemExit('No nonempty prediction for the requested instance; inspect output logs.')
+traj=json.loads((root/instance/(instance+'.traj.json')).read_text())
+print('Agent exit:',traj['info']['exit_status'])
+print('Prediction saved; run the evaluator before claiming resolved.')
+PY
+    ;;
+  *)
+    echo 'Usage: scripts/lab {build|up|down|shell|smoke|live-smoke|verify-task|status|swebench-one INSTANCE_ID [RUN_NAME]}'
+    ;;
+esac

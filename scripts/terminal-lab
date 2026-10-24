@@ -1,0 +1,126 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+TB="$ROOT/terminal-bench"
+HARBOR="$TB/.venv/bin/harbor"
+DATASET="${TB_DATASET:-$TB/datasets/terminal-bench}"
+STEP_LIMIT="${TB_STEP_LIMIT:-100}"
+WALL_SECONDS="${TB_WALL_SECONDS:-2700}"
+COST_LIMIT="${TB_COST_LIMIT:-1.0}"
+export BUILDX_CONFIG="$TB/.buildx"
+
+usage() {
+  cat <<'EOF'
+Usage:
+  scripts/terminal-lab check
+  scripts/terminal-lab smoke
+  scripts/terminal-lab preview TASK_SLUG     # resolve config, print JSON, no container run
+  scripts/terminal-lab run-single TASK_SLUG  # paid run, requires TERMINAL_BENCH_PAID_RUN=1
+  scripts/terminal-lab report JOB_NAME       # summarize a finished job
+
+Resources come from each task's own task.toml and are enforced by Docker
+(--cpus limit / --memory limit). Do not override them: overriding changes the
+benchmark's declared environment and makes results incomparable.
+EOF
+}
+
+# Shared launch arguments as a bash array so paths containing spaces survive.
+# preview and run-single must not drift apart.
+build_launch_args() {
+  local slug="$1" job="$2"
+  LAUNCH=(
+    run
+    --path "$DATASET/$slug"
+    --jobs-dir "$TB/runs"
+    --n-tasks 1
+    --n-concurrent 1
+    --n-attempts 1
+    --max-retries 0
+    --agent harbor_agents.mini_mcp:MiniSweAgentWithMcp
+    --model deepseek/deepseek-flash
+    --ak version=2.4.6
+    --ak cost_limit="$COST_LIMIT"
+    --ak "config={\"agent\":{\"step_limit\":$STEP_LIMIT,\"wall_time_limit_seconds\":$WALL_SECONDS}}"
+    --cpus limit
+    --memory limit
+    --job-name "$job"
+  )
+  if [[ -n "${TB_EXTRA_INSTRUCTION:-}" && -s "${TB_EXTRA_INSTRUCTION}" ]]; then
+    LAUNCH+=(--extra-instruction-path "$TB_EXTRA_INSTRUCTION")
+  fi
+}
+
+require_task() {
+  local slug="$1"
+  [[ "$slug" =~ ^[a-z0-9][a-z0-9.-]*$ ]] || { echo "Invalid task slug: $slug" >&2; exit 2; }
+  [[ -f "$DATASET/$slug/task.toml" ]] || {
+    echo "Task '$slug' not found in $DATASET" >&2
+    echo "Available: $(ls "$DATASET" | tr '\n' ' ')" >&2
+    exit 2
+  }
+}
+
+command="${1:-}"
+case "$command" in
+  check)
+    if ! docker image inspect harness-rsi-terminal-bench:harbor-0.24.0 >/dev/null 2>&1; then
+      docker compose -f "$TB/compose.yaml" build --pull=false harbor
+    fi
+    docker compose -f "$TB/compose.yaml" run --rm harbor --version
+    docker compose -f "$TB/compose.yaml" run --rm harbor agent list
+    ;;
+  smoke)
+    mkdir -p "$TB/.harbor" "$TB/runs"
+    docker compose -f "$TB/compose.yaml" build --pull=false harbor
+    docker compose -f "$TB/compose.yaml" run --rm harbor run \
+      --path "$TB/smoke_task/terminal-bench-smoke" \
+      --jobs-dir "$TB/runs" \
+      --agent nop --model openai/gpt-4o --n-concurrent 1 \
+      --cpus limit --override-cpus 1 --memory limit --override-memory-mb 2048 \
+      --job-name "local-terminal-smoke-$(date +%Y%m%d%H%M%S)"
+    ;;
+  preview)
+    slug="${2:-}"
+    [[ -n "$slug" ]] || { usage; exit 2; }
+    require_task "$slug"
+    mkdir -p "$TB/.harbor" "$TB/runs"
+    build_launch_args "$slug" "preview-$slug"
+    docker compose -f "$TB/compose.yaml" run --rm harbor "${LAUNCH[@]}" --print-config
+    ;;
+  run-single)
+    slug="${2:-}"
+    [[ -n "$slug" ]] || { usage; exit 2; }
+    require_task "$slug"
+    if [[ "${TERMINAL_BENCH_PAID_RUN:-}" != "1" ]]; then
+      echo "Paid run not started. Set TERMINAL_BENCH_PAID_RUN=1 to explicitly authorize a model call." >&2
+      exit 3
+    fi
+    free_gib=$(df -g "$ROOT" | awk 'NR==2 {print $4}')
+    if (( free_gib < 20 )); then
+      echo "Only ${free_gib} GiB free; require 20 GiB before starting a task." >&2
+      exit 4
+    fi
+    job="tb40-${slug}-$(date +%Y%m%d-%H%M%S)"
+    mkdir -p "$TB/.harbor" "$TB/runs"
+    # Rebuild only when the control image is absent: a rebuild needs Docker Hub
+    # metadata, which is unreachable on this network (use scripts/terminal-lab
+    # check --force style manual build when the Dockerfile changes).
+    if ! docker image inspect harness-rsi-terminal-bench:harbor-0.24.0 >/dev/null 2>&1; then
+      docker compose -f "$TB/compose.yaml" build --pull=false harbor
+    fi
+    echo "Job: $job (task resources from task.toml, 1 concurrent trial, no retries)"
+    build_launch_args "$slug" "$job"
+    docker compose -f "$TB/compose.yaml" run --rm harbor "${LAUNCH[@]}"
+    echo "JOB_NAME=$job"
+    ;;
+  report)
+    job="${2:-}"
+    [[ -n "$job" ]] || { usage; exit 2; }
+    "$HARBOR" job view "$job" --jobs-dir "$TB/runs" 2>/dev/null || {
+      echo "No harbor job view available; raw results: $TB/runs/$job/result.json" >&2
+      exit 2
+    }
+    ;;
+  *) usage; exit 2 ;;
+esac

@@ -1,0 +1,94 @@
+{
+  "job": "tb20-fix-git-20261023-220312",
+  "task": {
+    "slug": "fix-git",
+    "dataset": "terminal-bench@2.0 (Harbor legacy registry, 89 tasks)",
+    "registry_source_commit": "69671fbaac6d67a7ef0dfec016cc38a64ef7a77c",
+    "difficulty": "easy",
+    "expert_time_estimate_min": 5.0,
+    "declared_resources": {
+      "cpus": 1,
+      "memory": "2G",
+      "storage": "10G"
+    },
+    "docker_image": "alexgshaw/fix-git:20251031",
+    "file_sha256": {
+      "environment/Dockerfile": "dfd64a46955909f58d1b562ea233c3cace75195bbef5d75cd6b599f3b8967bb7",
+      "environment/resources/patch_files/about.md": "2e09260b011012f9f7f491cd02809903449924cf8f825acd369fb8990b04e768",
+      "environment/resources/patch_files/default.html": "fb3fad17b83338002f5fd6a99ea1ec3a662cea570f9fff9240b8abc1861be655",
+      "environment/setup.sh": "99125cf2e362f2f4a864ba2f55c2f0e9f0aa0641fed588cef588184fcc192de2",
+      "instruction.md": "f98174e47ba5ce040f6fad22ef3cbca4dd27b3192868ea5d082077222c3ec4e8",
+      "solution/solve.sh": "4789fa74e92e5b7b893c4b8637c26db2b6458b2136edfc3e686cc278dfc23630",
+      "task.toml": "65ed15b71751a10df66cd1fba4658762156f34bacd9f7ba1688a13947d0999e6",
+      "tests/test.sh": "4770437ea96c3cc84684b4f99d55fb148fcac09f9ea1e8ef49de487716e6c334",
+      "tests/test_outputs.py": "a8a6f51eb0d7c4ebdf0813c8f0b645edf29c995f1f9faf2aca3886a6713043f3"
+    }
+  },
+  "launch": {
+    "agent": "harbor_agents.mini_mcp:MiniSweAgentWithMcp (upstream adapter + mcp dependency)",
+    "model": "deepseek/deepseek-flash",
+    "agent_kwargs": {
+      "version": "2.4.6",
+      "cost_limit": 1.0,
+      "config": {
+        "agent": {
+          "step_limit": 100,
+          "wall_time_limit_seconds": 2700
+        }
+      }
+    },
+    "attempts": 1,
+    "max_retries": 0,
+    "n_concurrent": 1,
+    "cpu_enforcement_policy": "limit",
+    "memory_enforcement_policy": "limit",
+    "override_cpus": null,
+    "override_memory_mb": null,
+    "preview_file": "artifacts/tb20-preview-fix-git.json"
+  },
+  "resource_enforcement_evidence": {
+    "source": "docker inspect of the live trial container during the first attempt of the same task/job spec",
+    "container": "fix-git__k4s4uvz__env-main-1",
+    "NanoCpus": 1000000000,
+    "NanoCpus_to_cpus": 1.0,
+    "HostConfig.Memory_bytes": 2147483648,
+    "HostConfig.Memory_gib": 2.0,
+    "matches_task_toml": true
+  },
+  "outcome": {
+    "reward": 1.0,
+    "verifier_tests_passed": 2,
+    "verifier_output": "terminal-bench/runs/tb20-fix-git-20261023-220312/fix-git__9nwMjav/verifier/test-stdout.txt",
+    "agent_exit_status": "Submitted",
+    "api_calls": 11,
+    "cost_usd_client_estimate": 0.0048957539999999996,
+    "job_cost_usd": 0.0048957539999999996,
+    "input_tokens": 98199,
+    "cache_tokens": 87168,
+    "output_tokens": 4966,
+    "errors": 0,
+    "duration_sec": 166.8,
+    "agent_execution_sec": 43.7,
+    "verifier_sec": 10.8,
+    "exception": null
+  },
+  "blockers_found_and_fixed": [
+    {
+      "issue": "LiteLLM raised ModuleNotFoundError: mcp inside the task container",
+      "evidence": "artifacts/tb20-fix-git-run.log",
+      "fix": "custom agent subclass re-installs the CLI with --with mcp (terminal-bench/harbor_agents/mini_mcp.py)"
+    },
+    {
+      "issue": "Docker Hub unreachable from this network (auth.docker.io and registry-1.docker.io time out)",
+      "evidence": "first run failed at control-image metadata load",
+      "fix": "pulled the task image through dockerproxy.net and retagged to the official name; skipped control-image rebuild because the image already existed locally"
+    }
+  ],
+  "boundaries": [
+    "One easy task, one attempt. Not a benchmark score.",
+    "Agent CLI comes from PyPI 2.4.6, not the local mini-swe-agent checkout.",
+    "Task image ran as linux/amd64 on arm64 under emulation.",
+    "Client-side cost estimate; DeepSeek billing not read."
+  ],
+  "timestamp_utc": "2026-10-23T14:08:05.538120+00:00"
+}

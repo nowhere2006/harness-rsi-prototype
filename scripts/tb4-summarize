@@ -1,0 +1,65 @@
+#!/usr/bin/env python3
+"""Summarise outputs/tb4-baseline/records.jsonl into a per-task and aggregate view."""
+
+from __future__ import annotations
+
+import json
+import tomllib
+from collections import defaultdict
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+RECORDS = ROOT / "outputs" / "tb4-baseline" / "records.jsonl"
+DATASET = ROOT / "terminal-bench" / "datasets-tb4" / "terminal-bench"
+
+
+def meta(slug: str) -> tuple[str, float]:
+    cfg = tomllib.loads((DATASET / slug / "task.toml").read_text())
+    return cfg["metadata"]["category"], cfg["metadata"].get("expert_time_estimate_hours", 0.0)
+
+
+def main() -> int:
+    if not RECORDS.exists() or not RECORDS.read_text().strip():
+        print("no records yet")
+        return 0
+    rows = [json.loads(line) for line in RECORDS.read_text().splitlines() if line.strip()]
+
+    print(f"{'task':32s} {'status':10s} {'reward':>6s} {'cost':>8s} {'wall':>7s} {'in':>8s} {'out':>7s}")
+    for r in rows:
+        cost = r.get("cost_usd")
+        print(
+            f"{r['slug']:32s} {r.get('status',''):10s} {str(r.get('reward')):>6s} "
+            f"{(f'${cost:.4f}' if isinstance(cost, (int, float)) else '-'):>8s} "
+            f"{(str(r.get('wall_sec')) + 's'):>7s} "
+            f"{str(r.get('input_tokens') or '-'):>8s} {str(r.get('output_tokens') or '-'):>7s}"
+        )
+
+    done = [r for r in rows if r.get("status") == "completed"]
+    solved = [r for r in done if r.get("reward") == 1]
+    total_cost = sum(r.get("cost_usd") or 0 for r in rows)
+    total_wall = sum(r.get("wall_sec") or 0 for r in rows)
+    print(
+        f"\ntasks recorded {len(rows)}  graded {len(done)}  solved {len(solved)}  "
+        f"rate {(len(solved)/len(done) if done else 0):.0%}"
+    )
+    print(f"total cost ${total_cost:.4f}  total wall {total_wall/3600:.1f}h  "
+          f"pulls {sum(r.get('pull_sec') or 0 for r in rows)/60:.0f}min")
+
+    by_cat: dict[str, list[int]] = defaultdict(lambda: [0, 0])
+    for r in done:
+        cat, _ = meta(r["slug"])
+        by_cat[cat][0] += 1
+        by_cat[cat][1] += 1 if r.get("reward") == 1 else 0
+    if by_cat:
+        print("\nby category:")
+        for cat, (n, ok) in sorted(by_cat.items()):
+            print(f"  {cat:12s} {ok}/{n}")
+
+    failed = [r["slug"] for r in rows if r.get("status") not in ("completed",)]
+    if failed:
+        print(f"\nnot graded: {', '.join(failed)}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

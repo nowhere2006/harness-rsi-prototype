@@ -1,0 +1,205 @@
+#!/usr/bin/env python3
+"""Sequential Evo-Harness pass over the TB4 subset.
+
+Harness text is appended to each task instruction; after a failed task a
+reflection call distils the trajectory into at most two lessons and the harness
+is updated before the next task starts.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import re
+import subprocess
+import sys
+import time
+from datetime import datetime, timezone
+from pathlib import Path
+
+import urllib.request
+
+ROOT = Path(__file__).resolve().parent.parent
+TB = ROOT / "terminal-bench"
+DATASET = TB / "datasets-tb4" / "terminal-bench"
+RUNS = TB / "runs"
+OUT = ROOT / "outputs" / "evo-harness"
+HARNESS = TB / "harness" / "harness.md"
+RECORDS = OUT / "records.jsonl"
+MAX_HARNESS_CHARS = 4000
+MODEL = "deepseek-flash"
+API = "https://api.deepseek.com/chat/completions"
+
+SLUGS = [
+    "photonic-waveguide-routing",
+    "html-js-filter",
+    "vpp-loss-divergence",
+    "cargo-flight-dispatch",
+    "mvcc-lsm-compaction",
+    "production-planning",
+    "sound-change-cascade",
+    "gsea-proteomics",
+    "vba-userform-port",
+    "react-lead-form",
+    "wal-recovery-ordering",
+    "atrx-vep-crispr",
+    "fin-saccr-rwa",
+    "satb-audio-transcription",
+    "session-window-debug",
+]
+
+
+def log(msg: str) -> None:
+    print(f"[{datetime.now(timezone.utc).strftime('%H:%M:%SZ')}] {msg}", flush=True)
+
+
+def api_key() -> str:
+    for line in (ROOT / ".env").read_text().splitlines():
+        if line.startswith("DEEPSEEK_API_KEY="):
+            return line.split("=", 1)[1].strip()
+    raise SystemExit("DEEPSEEK_API_KEY missing from .env")
+
+
+def chat(messages: list[dict], max_tokens: int = 800) -> str:
+    body = json.dumps({
+        "model": MODEL,
+        "messages": messages,
+        "max_tokens": max_tokens,
+        "thinking": {"type": "disabled"},
+    }).encode()
+    req = urllib.request.Request(
+        API, data=body,
+        headers={"Content-Type": "application/json", "Authorization": f"Bearer {api_key()}"},
+    )
+    with urllib.request.urlopen(req, timeout=180) as resp:
+        return json.loads(resp.read())["choices"][0]["message"]["content"]
+
+
+def read_harness() -> str:
+    return HARNESS.read_text() if HARNESS.exists() else ""
+
+
+def write_harness(text: str) -> None:
+    HARNESS.parent.mkdir(parents=True, exist_ok=True)
+    HARNESS.write_text(text)
+
+
+def trim(text: str) -> str:
+    if len(text) <= MAX_HARNESS_CHARS:
+        return text
+    parts = text.split("\n## ")
+    while len(parts) > 1 and len("\n## ".join(parts)) > MAX_HARNESS_CHARS:
+        parts.pop(1)
+    return "\n## ".join(parts)
+
+
+def run_task(slug: str) -> dict:
+    env = {
+        **os.environ,
+        "TB_DATASET": str(DATASET),
+        "TB_STEP_LIMIT": "150",
+        "TB_WALL_SECONDS": "5400",
+        "TB_COST_LIMIT": "2.0",
+        "TB_EXTRA_INSTRUCTION": str(HARNESS),
+        "TERMINAL_BENCH_PAID_RUN": "1",
+    }
+    started = time.time()
+    proc = subprocess.run(
+        [str(ROOT / "scripts" / "terminal-lab"), "run-single", slug],
+        env=env, capture_output=True, text=True,
+    )
+    job = ""
+    for line in proc.stdout.splitlines():
+        if line.startswith("JOB_NAME="):
+            job = line.split("=", 1)[1]
+    if not job:
+        return {"slug": slug, "status": "no_job", "stderr": proc.stderr.strip()[-500:]}
+    job_dir = RUNS / job
+    stats = json.loads((job_dir / "result.json").read_text())["stats"]
+    trial = next((p for p in job_dir.iterdir() if p.is_dir()), None)
+    reward = None
+    if trial and (trial / "result.json").exists():
+        tr = json.loads((trial / "result.json").read_text())
+        reward = (tr.get("verifier_result") or {}).get("rewards", {}).get("reward")
+    return {
+        "slug": slug, "job": job, "reward": reward,
+        "cost_usd": stats["cost_usd"], "wall_sec": round(time.time() - started, 1),
+        "errors": stats["n_errored_trials"], "trial_dir": str(trial) if trial else None,
+    }
+
+
+def failure_context(trial_dir: Path) -> str:
+    parts = []
+    verifier = trial_dir / "verifier"
+    if verifier.exists():
+        for name in ("test-stdout.txt", "ctrf.json"):
+            p = verifier / name
+            if p.exists():
+                parts.append(f"VERIFIER OUTPUT ({name}):\n" + p.read_text(errors="ignore")[:2000])
+    traj = trial_dir / "agent" / "mini-swe-agent.trajectory.json"
+    if traj.exists():
+        msgs = json.loads(traj.read_text()).get("messages", [])
+        commands = [
+            a.get("command", "")
+            for m in msgs for a in m.get("extra", {}).get("actions", [])
+            if a.get("command")
+        ]
+        parts.append("LAST COMMANDS:\n" + "\n".join(commands[-8:])[:2000])
+    return "\n\n".join(parts)
+
+
+def reflect(slug: str, instruction: str, context: str) -> str:
+    prompt = f"""You are improving a reusable harness for a terminal agent.
+
+TASK ({slug}) INSTRUCTION:
+{instruction[:1800]}
+
+WHAT HAPPENED:
+{context[:3000]}
+
+Write at most TWO lessons that would help on future tasks of this kind.
+Each lesson must be concrete and actionable, not generic advice.
+Format exactly:
+- TRIGGER: <when this applies>
+  ACTION: <what to do differently>
+  WHY: <short evidence from the trace>
+
+Do not restate the task. Do not mention this prompt. Max 90 words total."""
+    return chat([{"role": "user", "content": prompt}], max_tokens=300).strip()
+
+
+def main() -> int:
+    OUT.mkdir(parents=True, exist_ok=True)
+    limit = int(os.environ.get("EVO_LIMIT", "0"))
+    slugs = sys.argv[1:] or (SLUGS[:limit] if limit else SLUGS)
+    log(f"evo-harness over {len(slugs)} tasks")
+    for index, slug in enumerate(slugs, 1):
+        harness = read_harness()
+        log(f"[{index}/{len(slugs)}] {slug}: harness={len(harness)} chars")
+        record = run_task(slug)
+        record["harness_chars"] = len(harness)
+        record["finished_at"] = datetime.now(timezone.utc).isoformat()
+        learnt = ""
+        if record.get("reward") == 0 and record.get("trial_dir"):
+            instruction = (DATASET / slug / "instruction.md").read_text()
+            context = failure_context(Path(record["trial_dir"]))
+            try:
+                learnt = reflect(slug, instruction, context)
+                if not learnt.strip():
+                    learnt = reflect(slug, instruction, context)
+                if learnt.strip():
+                    block = f"\n## From {slug}\n{learnt}\n"
+                    write_harness(trim(read_harness() + block))
+            except Exception as exc:
+                record["reflect_error"] = str(exc)[:300]
+        record["lesson"] = learnt
+        with RECORDS.open("a") as fh:
+            fh.write(json.dumps(record) + "\n")
+        log(f"{slug}: reward={record.get('reward')} cost=${record.get('cost_usd')} "
+            f"harness={len(read_harness())} chars")
+    log("evo-harness finished")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

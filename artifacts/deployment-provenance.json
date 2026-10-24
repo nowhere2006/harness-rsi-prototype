@@ -1,0 +1,19 @@
+{
+  "upstream_url": "https://github.com/SWE-agent/mini-swe-agent.git",
+  "upstream_sha": "04d809ceab9df28f9adaed044884180159172930",
+  "upstream_clean": true,
+  "file_sha256": {
+    "Dockerfile": "9a48f7b10574c25514e9765c12531c3cad25c91e8ce1345c37ccd4ef99b4499d",
+    "requirements-bootstrap.txt": "dbf04bea2609cc995e579b8e3db9a6b14646fdcd641827e27ddfc15558f88d14",
+    "requirements.lock": "049dc621fbf8aa5f5166e29bc3055c9db0224d87b61e1a6dfc41f0bb9d054f69",
+    "compose.yaml": "badc01ee4446e5f70f9124b69913ebde92b0986ae15d9f2e94607a08c8a9d23c",
+    "configs/local-swebench.yaml": "1b29b86a32656e150bd9473aeb196ef70246d580cbf51f601827a3c9d2876f84",
+    "configs/model-pricing.json": "c7fd2da5324fdd8bf8ec36fbc2d6b92c82b9311e6d54e671700344d3d722bc5f",
+    "scripts/verify_task.py": "cb2bd292416738d4da000942346cf1f5f5424f08589bd044132d3385926c5e9d",
+    "scripts/smoke.py": "8617c4a33f0e9618880919f925535857dec0f0c35ec8214420e371431eba2420",
+    "scripts/lab": "d292b514fe99bcf2f86f9b6c5b1edf90baf0800f9b70d6ab988f2786f4253896",
+    "README.md": "86489763e086b18751142fb9611044d93241b7f0119bb7e111112992bbb0f1ff",
+    "docs/experiments/specs/2026-10-23-baseline-budget.md": "d407c73994ceafbacd567c3a8628d698b15bd8fe3f8d69cb84aeb9454c15f092"
+  },
+  "timestamp_utc": "2026-10-23T13:11:59.397072+00:00"
+}

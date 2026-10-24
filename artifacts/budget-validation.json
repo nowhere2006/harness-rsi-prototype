@@ -1,0 +1,21 @@
+{
+  "result": "PASS",
+  "timestamp_utc": "2026-10-23T13:10:45.288742+00:00",
+  "merged_config_sources": [
+    "upstream swebench.yaml",
+    "configs/local-swebench.yaml"
+  ],
+  "step_limit": 100,
+  "cost_limit_usd_peak_rate_estimate": 1.0,
+  "wall_time_limit_seconds": 2700,
+  "container_timeout": "60m",
+  "global_call_limit_per_process": 110,
+  "global_cost_limit_per_process_usd": 1.0,
+  "workers_in_single_task_launcher": 1,
+  "automatic_full_task_retries": false,
+  "model_name": "deepseek/deepseek-flash",
+  "thinking": "disabled",
+  "upstream_task_prompts_preserved": true,
+  "llm_calls_in_validation": 0,
+  "task_containers_started_in_validation": 0
+}
