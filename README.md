@@ -17,9 +17,9 @@ tasks.
 | --- | --- | --- |
 | SWE-bench Verified, `scikit-learn__scikit-learn-26323` | official `resolved=true`; 1 FAIL_TO_PASS + 188 PASS_TO_PASS | one task, one attempt |
 | Terminal-Bench 2.0, `fix-git` | official `reward=1.0`; 2 tests passed | one task, one attempt |
-| Terminal-Bench 4.0 subset baseline | 19 tasks attempted; pass / fail / step-limit / interruption recorded | not a leaderboard score |
+| Terminal-Bench 4.0 subset baseline | 19-task subset selected; ledger caveats documented | not a leaderboard score |
 | Evo prototype, 2-task smoke | both tasks `reward=0`; harness grew 0 → 840 → 1663 chars | mechanism only |
-| Evo prototype, 15-task sequential run | in progress | no result yet |
+| Evo prototype, 15-task sequential run | started; no aggregate result yet | no result yet |
 
 Details and caveats: [`docs/experiments/results/`](docs/experiments/results/) and
 [`results/`](results/).
