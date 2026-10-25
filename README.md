@@ -1,8 +1,8 @@
 # Harness RSI 本地实验环境
 
-> 2026-10-24：已加入 `scripts/evo-harness` 最小原型（失败反思 + 跨任务注入）。公开仓库：https://github.com/nowhere2006/harness-rsi-prototype 。论文的 evolver、结构化 skill 与 top-b selection 未实现。
+> 2026-10-24 状态：评测管线可用（Harbor + mini-swe-agent + Terminal-Bench 4.0），Evo-Harness 首版已实现并跑完 15 题，结果为负（10 → 6）。失败原因已定位到论文的三个前提，见下方日志与反思。论文的 evolver、结构化 skill 与 top-b selection 未实现。
 
-本目录用于搭建 mini-swe-agent + Docker + SWE-bench 的基线运行环境，供之后选择论文并复现 Agent Harness RSI 改进。部署、基础样例通过、SWE-bench 解题成功、论文复现成功是四个不同的证据层级。当前结果见 `artifacts/setup-status.json`。
+本仓库记录一条完整的实验链：搭环境 → 跑基线 → 实现一个自改进方法 → 得到负结果并定位原因。部署、链路跑通、基线可信、论文复现是四个不同的证据层级，本仓库目前停在第三层，并对第四层的差距做了具体分析。
 
 ## 实验日志
 
