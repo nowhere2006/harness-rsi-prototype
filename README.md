@@ -4,6 +4,30 @@
 
 本目录用于搭建 mini-swe-agent + Docker + SWE-bench 的基线运行环境，供之后选择论文并复现 Agent Harness RSI 改进。部署、基础样例通过、SWE-bench 解题成功、论文复现成功是四个不同的证据层级。当前结果见 `artifacts/setup-status.json`。
 
+## 实验日志
+
+| 日期 | 做了什么 | 结果 | 记录 |
+|---|---|---|---|
+| 10-23 | 部署 mini-swe-agent + Docker + SWE-bench | 单题 resolved，189 个测试通过 | [报告](docs/experiments/results/2026-10-23-swebench-sk26323.md) |
+| 10-23 | Terminal-Bench 2.0 链路验证 | `fix-git` reward 1.0 | [报告](docs/experiments/results/2026-10-23-terminal-bench-fix-git.md) |
+| 10-24 | TB4 fast-agent 子集 19 题基线 | 15 题有效，10 题通过（67%） | [报告](docs/experiments/results/2026-10-24-tb4-baseline-fast-agent-subset.md) |
+| 10-24 | Evo-Harness 首版实现 + 15 题顺序实验 | **10 → 6，0 翻盘 4 退步** | [报告](docs/experiments/results/2026-10-24-evo-harness-15tasks.md) |
+| 10-24 | 根因分析 + 与论文逐项对比 | 三个前提不满足，非实现 bug | [分析](docs/analysis/2026-10-24-why-evo-harness-failed.md) · [对比](docs/analysis/2026-10-24-reflection-and-differences.md) |
+
+一句话结论：**管线可用，基线干净；方法首版无效，原因是批级更新、solver 能力、任务类型三个前提同时不满足。**
+
+## 反思：和论文差在哪
+
+这一版实现不是论文的复现，而是它最小骨架的一次实现。差别集中在三个结构性组件：
+
+- **缺 scope**：没有"经验属于哪类任务"的标注，所以选择性注入做不到，跨域经验变成了干扰
+- **缺验收**：失败就写入，没有"这条经验是否真的有用"的门槛
+- **缺可分离的评估**：每题 1 次，方差足以翻转结果
+
+另一层原因是 benchmark 错配：论文在 TerminalBench2 上验证（短任务、流程类失败多），我们在 TB4 上跑（长程任务、实例级 bug 多），反思能提炼的东西天然不同。TB2 和 TB4 的任务集、超时（30 分钟 vs 8 小时）、验证方式（同容器 vs 独立 verifier）都不同，分数不可比。
+
+完整对比（含两张流程图、九项逐项差异、No Propose 消融、四个可解释性发现、改进优先级）：[反思与流程对比](docs/analysis/2026-10-24-reflection-and-differences.md)。
+
 ## 仓库导览
 
 - 结论与两臂对比：本文件
@@ -112,18 +136,6 @@ scripts/compare-arms             # 与基线配对比较
 **结果：14 组有效对照，基线通过 10 题、本方法通过 6 题，翻盘 0 题、退步 4 题。** 其中 `html-js-filter` 在 harness 为空时也退步，说明单次尝试的方差本身就足以翻转结果；其余退步都发生在 harness 已累积内容之后，而注入的经验与当前任务无关（例如给 WAL 恢复题注入 HTML 过滤经验）。
 
 诊断：缺少论文里的 general / topic 分域与筛选，把"迁移"做成了"干扰"；注入位置在任务说明而非 system prompt。详见 [Evo-Harness 首轮实验](docs/experiments/results/2026-10-24-evo-harness-15tasks.md) 与 [根因分析](docs/analysis/2026-10-24-why-evo-harness-failed.md)。
-
-## 反思：和论文差在哪
-
-这一版实现不是论文的复现，而是它最小骨架的一次实现。差别集中在三个结构性组件：
-
-- **缺 scope**：没有"经验属于哪类任务"的标注，所以选择性注入做不到，跨域经验变成了干扰
-- **缺验收**：失败就写入，没有"这条经验是否真的有用"的门槛
-- **缺可分离的评估**：每题 1 次，方差足以翻转结果
-
-另一层原因是 benchmark 错配：论文在 TerminalBench2 上验证（短任务、流程类失败多），我们在 TB4 上跑（长程任务、实例级 bug 多），反思能提炼的东西天然不同。TB2 和 TB4 的任务集、超时（30 分钟 vs 8 小时）、验证方式（同容器 vs 独立 verifier）都不同，分数不可比。
-
-完整对比（含两张流程图、九项逐项差异、改进优先级）：[反思与流程对比](docs/analysis/2026-10-24-reflection-and-differences.md)。
 
 ## 官方来源
 

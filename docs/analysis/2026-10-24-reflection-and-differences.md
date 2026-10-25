@@ -103,3 +103,52 @@ flowchart TD
 5. **每题 3 次重复**，配对比较，把效应和方差分开
 
 做完 1–2 之后重跑同一组 15 题，才有资格讨论"Evo-Harness 在 TB4 上行不行"。现在只能说：**这一版实现无效，且原因已经定位。**
+
+## 7. No Propose：论文自己的消融说明了什么
+
+论文对它的定义只有一句：**No Propose removes solver-side proposal of candidate memories.**
+
+正常流程是两段式：执行结束 → proposer 反思出候选记忆（lesson / trigger / evidence / scope_hint）→ evolver 拿候选记忆与当前 harness 决定 Add / Merge / Revise / Skip。No Propose 摘掉第一段，evolver 直接面对原始执行上下文，退化成一段式直更。
+
+它和 No Evolve 构成一条消融阶梯：
+
+```
+No Evolve  <  No Propose  <  Evo-Harness（完整）
+  不更新        少一级              两段式
+```
+
+| 设置 | CL-Bench | SWE-bench Lite |
+|---|---:|---:|
+| No Evolve | 29.54 | 63.67 |
+| No Propose | 33.28 | 65.33 |
+| 完整 | 34.02 | 67.00 |
+
+读法：No Propose 已吃到大部分收益，说明**收益主要来自"把上下文编译进 harness"这个动作本身**，结构化四元组只再贡献 0.7–1.7 个点。论文的措辞是两者互补，但权重并不对等。
+
+保留意见：论文没有展开 No Propose 里 evolver 拿到的是原始轨迹还是简化摘要。如果它拿的仍是完整上下文，那"少了 proposer"只等于少一次 LLM 调用，这条消融的解释力要打折。
+
+## 8. 用论文自己的证据解释我们的负结果
+
+三个前提我们同时不满足，这不是实现 bug：
+
+**前提一：批级更新。** 论文明确写 $|B_i| = 1$ 时方法退化成只有 task-type 更新，跨任务模式无从产生。算法里 `CompileCrossTask` 的输入是"本批所有任务的候选记忆集合"，只有批级更新才能横向比较。我们每题一跑、跑完立刻更新，等于删掉了半个方法。
+
+**前提二：solver 能力。** DeepSeek V4.1 Flash 在 TB4 上是 33.8%（独立评测）/ 42.3%（厂商口径）：开源模型里最强，绝对能力属于中游。而论文 RQ1 显示收益随 solver 能力单调上升——Opus 4.6 在深 CL-Bench 上 +4.5（PTE 类别 +9.8），Kimi-K2.5 只有 +1.1，GPT-OSS 只有 +0.8。弱 solver 的预期收益本来就接近零。
+
+**前提三：任务类型。** 论文的 CL-Bench 分类里，PTE（程序性任务执行）每个模型都提升、最高 +9.8；而 EDS（经验发现与仿真）在 Opus 4.6 上是 **−2.5**、GPT-OSS 是 −1.0。TB4 的失败更接近 EDS（长程、任务独有、探索性强），而不是 PTE。**我们把方法搬到了论文自己报告"可能为负"的任务类型上。**
+
+## 9. 四条最值钱的可解释性发现
+
+**① 弱 solver 会被 harness 拖累。** SWE-bench Lite 上，Sonnet 当 solver 时 No-Evolve 58.0，Same 演化 55.3、Cross 演化 55.7——两个都低于不演化；而 Opus 当 solver 时是 70.7 → 75.3 / 76.0。harness 要求 solver 有能力理解并执行这些指导。我们观察到的 10 → 6 与此同类。
+
+**② 模型自评比不更新更差。** Self-Generated 反馈把 CL-Bench 从 29.54 拉到 27.96、SWE 从 63.67 拉到 61.67。没有外部证据锚定的自我判断会写入错误经验。我们用的是 verifier 输出（Standard 级），没踩这个坑——所以问题不在反馈来源。
+
+**③ 反馈越详细未必越好。** SWE-bench 上 Minimal（只有通过/失败）67.33 > Standard（详细报错）67.00。作者解释是详细报错让 harness 过度贴合具体失败。这正好解释我们的 harness 为什么全是实例级诊断（某字段算错、某依赖太慢）：给的信息越细，反思越往单个 bug 上钻。
+
+**④ general / topic 的权重取决于任务同质性。** CL-Bench 靠 topic（33.70 vs general 30.28），SWE 靠 general（66.67 vs topic 64.33）。没有普适答案。
+
+## 10. 这对"复现"意味着什么
+
+严格对齐论文需要同时满足：批级更新（每批 5–10 题）、程序性任务为主的 benchmark（TB2）、以及与论文同量级的 solver。三条我们目前只有第一条勉强可做。
+
+现实路径是把它标注为**低资源变体**：保留 DeepSeek Flash 与 TB4，只验证 scope 过滤与注入位置这两个最小改动，并在报告里明确"这不是论文设定的复现"。在此之前，任何"Evo-Harness 在 TB4 上无效"的说法都不成立。
